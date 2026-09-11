@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conselho Fiscal - Apuração e Votação</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-200 min-h-screen font-sans">
+
+  <header class="bg-amber-700 text-white p-4 shadow-md sticky top-0 z-10">
+    <div class="max-w-4xl mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold uppercase">Painel Exclusivo - Conselho Fiscal</h1>
+      <div class="flex gap-2 items-center">
+        <button onclick="zerarUrna()" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg font-bold transition">Zerar Urna ⚠️</button>
+        <a href="index.html" class="text-xs bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg font-bold">Ver Tela Pública ↗</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-6 mt-4">
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-100 text-slate-600 text-sm uppercase tracking-wider border-b">
+            <th class="p-4">Cargo / Posição</th>
+            <th class="p-4">Candidato</th>
+            <th class="p-4 text-center">Votos no Banco</th>
+            <th class="p-4 text-center">Adicionar Votos (Qtd / Ação)</th>
+          </tr>
+        </thead>
+        <tbody id="tabela-conselho" class="divide-y divide-slate-200">
+          <tr><td colspan="4" class="p-6 text-center text-slate-500">Carregando conselheiros...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
+
+    async function carregarConselho() {
+      try {
+        const response = await fetch(`${API_URL}?acao=ler`);
+        const data = await response.json();
+        
+        if (data.status === "sucesso") {
+          const tbody = document.getElementById('tabela-conselho');
+          tbody.innerHTML = '';
+
+          let conselheiros = data.candidatos.filter(c => c.cargo === "Conselho Fiscal");
+          conselheiros.sort((a, b) => b.votos - a.votos);
+
+          conselheiros.forEach((c, index) => {
+            let statusBadge = '';
+            
+            if (index === 0 && c.votos > 0) {
+              statusBadge = '<span class="bg-amber-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">Presidente do Conselho</span>';
+            } else if (index === 1 && c.votos > 0) {
+              statusBadge = '<span class="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">1º Membro</span>';
+            } else if (index === 2 && c.votos > 0) {
+              statusBadge = '<span class="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">2º Membro</span>';
+            } else if (index >= 3 && index <= 5 && c.votos > 0) {
+              statusBadge = `<span class="bg-slate-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">${index - 2}º Suplente</span>`;
+            } else {
+              statusBadge = '<span class="text-slate-400 text-xs font-medium">Não eleito / Sem votos</span>';
+            }
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-50 transition-colors';
+            tr.innerHTML = `
+              <td class="p-4">
+                <div class="font-bold text-slate-800">Ranking #${index + 1}</div>
+                <div class="mt-1">${statusBadge}</div>
+              </td>
+              <td class="p-4 font-bold text-slate-900">${c.nome} <span class="text-xs text-slate-400 font-normal">(${c.numero || 'N/A'})</span></td>
+              <td class="p-4 text-center"><span class="text-2xl font-black text-amber-700">${c.votos}</span></td>
+              <td class="p-4 text-center">
+                <div class="flex justify-center items-center gap-2">
+                  <input type="number" id="input-${c.id}" min="1" value="1" class="border border-slate-300 rounded-lg px-3 py-2 w-20 text-center font-bold text-lg">
+                  <button id="btn-${c.id}" onclick="votar(${c.id}, '${c.nome.replace(/'/g, "")}')" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-5 rounded-lg shadow transition-all transform active:scale-95 text-sm">
+                    + Inserir
+                  </button>
+                </div>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function votar(id, nome) {
+      const inputEl = document.getElementById(`input-${id}`);
+      const btnEl = document.getElementById(`btn-${id}`);
+      const qtd = parseInt(inputEl.value) || 1;
+
+      if (qtd <= 0) {
+        alert("Insira uma quantidade válida de votos.");
+        return;
+      }
+
+      const textoOriginal = btnEl.innerText;
+      btnEl.innerText = "...";
+      btnEl.disabled = true;
+
+      try {
+        const response = await fetch(`${API_URL}?acao=votar&id=${id}&qtd=${qtd}`);
+        const data = await response.json();
+
+        if (data.status === "sucesso") {
+          inputEl.value = 1;
+          await carregarConselho(); // Atualiza instantaneamente
+        } else {
+          alert("Erro ao registrar voto.");
+          btnEl.innerText = textoOriginal;
+          btnEl.disabled = false;
+        }
+      } catch (e) {
+        alert("Erro de conexão.");
+        btnEl.innerText = textoOriginal;
+        btnEl.disabled = false;
+      }
+    }
+
+    async function zerarUrna() {
+      if (!confirm("⚠️ ATENÇÃO: Deseja realmente ZERAR todos os votos desta urna? Esta ação não poderá ser desfeita!")) return;
+
+      try {
+        const response = await fetch(`${API_URL}?acao=zerar`);
+        const data = await response.json();
+
+        if (data.status === "sucesso") {
+          alert("Urna zerada com sucesso!");
+          carregarConselho();
+        } else {
+          alert("Erro ao zerar urna.");
+        }
+      } catch (e) {
+        alert("Erro de conexão com o Apps Script.");
+      }
+    }
+
+    carregarConselho();
+    setInterval(carregarConselho, 1500); // Atualização automática veloz a cada 1.5 segundos
+  </script>
+</body>
+</html>

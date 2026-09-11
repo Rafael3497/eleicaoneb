@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin - Lançamento de Votos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-200 min-h-screen font-sans">
+
+  <header class="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-10">
+    <div class="max-w-4xl mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold uppercase">Painel Mesário (Geral)</h1>
+      <div class="flex gap-2 items-center">
+        <button onclick="zerarUrna()" class="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg font-bold transition">Zerar Urna ⚠️</button>
+        <a href="conselho.html" class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-2 rounded-lg font-bold">Painel Conselho ↗</a>
+        <a href="index.html" target="_blank" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg font-bold">Ver Tela Pública ↗</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto p-6 mt-4">
+    <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-100 text-slate-600 text-sm uppercase tracking-wider border-b">
+            <th class="p-4">Cargo</th>
+            <th class="p-4">Candidato</th>
+            <th class="p-4 text-center">Votos no Banco</th>
+            <th class="p-4 text-center">Adicionar Votos (Qtd / Ação)</th>
+          </tr>
+        </thead>
+        <tbody id="tabela-admin" class="divide-y divide-slate-200">
+          <tr><td colspan="4" class="p-6 text-center text-slate-500">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <script>
+    const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
+
+    async function carregarAdmin() {
+      try {
+        const response = await fetch(`${API_URL}?acao=ler`);
+        const data = await response.json();
+        
+        if (data.status === "sucesso") {
+          const tbody = document.getElementById('tabela-admin');
+          tbody.innerHTML = '';
+
+          const filtrados = data.candidatos.filter(c => c.cargo !== "Conselho Fiscal");
+
+          filtrados.forEach(c => {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-slate-50';
+            tr.innerHTML = `
+              <td class="p-4 font-semibold text-slate-700">${c.cargo}</td>
+              <td class="p-4 font-bold text-slate-900">${c.nome} <span class="text-xs text-slate-400 font-normal">(${c.numero || 'N/A'})</span></td>
+              <td class="p-4 text-center"><span class="text-2xl font-black text-blue-600" id="votos-${c.id}">${c.votos}</span></td>
+              <td class="p-4 text-center">
+                <div class="flex justify-center items-center gap-2">
+                  <input type="number" id="input-${c.id}" min="1" value="1" class="border border-slate-300 rounded-lg px-3 py-2 w-20 text-center font-bold text-lg">
+                  <button id="btn-${c.id}" onclick="votar(${c.id}, '${c.nome.replace(/'/g, "")}')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-5 rounded-lg shadow transition-all transform active:scale-95 text-sm">
+                    + Inserir
+                  </button>
+                </div>
+              </td>
+            `;
+            tbody.appendChild(tr);
+          });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function votar(id, nome) {
+      const inputEl = document.getElementById(`input-${id}`);
+      const btnEl = document.getElementById(`btn-${id}`);
+      const qtd = parseInt(inputEl.value) || 1;
+
+      if (qtd <= 0) {
+        alert("Insira uma quantidade válida de votos.");
+        return;
+      }
+
+      // Feedback visual rápido de carregamento no botão
+      const textoOriginal = btnEl.innerText;
+      btnEl.innerText = "...";
+      btnEl.disabled = true;
+
+      try {
+        const response = await fetch(`${API_URL}?acao=votar&id=${id}&qtd=${qtd}`);
+        const data = await response.json();
+
+        if (data.status === "sucesso") {
+          inputEl.value = 1; 
+          await carregarAdmin(); // Atualiza instantaneamente após o sucesso
+        } else {
+          alert("Erro ao registrar voto.");
+          btnEl.innerText = textoOriginal;
+          btnEl.disabled = false;
+        }
+      } catch (e) {
+        alert("Erro de conexão.");
+        btnEl.innerText = textoOriginal;
+        btnEl.disabled = false;
+      }
+    }
+
+    async function zerarUrna() {
+      if (!confirm("⚠️ ATENÇÃO: Deseja realmente ZERAR todos os votos desta urna? Esta ação não poderá ser desfeita!")) return;
+
+      try {
+        const response = await fetch(`${API_URL}?acao=zerar`);
+        const data = await response.json();
+
+        if (data.status === "sucesso") {
+          alert("Urna zerada com sucesso!");
+          carregarAdmin();
+        } else {
+          alert("Erro ao zerar urna.");
+        }
+      } catch (e) {
+        alert("Erro de conexão com o Apps Script.");
+      }
+    }
+
+    carregarAdmin();
+    setInterval(carregarAdmin, 1500); // Atualização automática veloz a cada 1.5 segundos
+  </script>
+</body>
+</html>
