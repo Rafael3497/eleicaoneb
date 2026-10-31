@@ -1,5 +1,85 @@
 const SHEET_NAME = 'Apuração';
-const STATUS_APURACAO_KEY = 'statusApuracao';
+const CONTROL_SHEET_NAME = 'Controle da Apuração';
+
+function obterAbaControle(ss) {
+  let controle = ss.getSheetByName(CONTROL_SHEET_NAME);
+  if (!controle) controle = ss.insertSheet(CONTROL_SHEET_NAME);
+
+  if (controle.getRange('A1').getValue() !== 'STATUS DA APURAÇÃO') {
+    controle.getRange('A1:B2').setValues([
+      ['STATUS DA APURAÇÃO', 'Aguardando início'],
+      ['Estado', 'ao-vivo']
+    ]);
+    controle.getRange('A4').setValue('CANDIDATOS ELEITOS');
+    controle.getRange('A5:C5').setValues([['Cargo', 'Candidato', 'Votos']]);
+    controle.getRange('A1:B1').setFontWeight('bold').setBackground('#1e3a8a').setFontColor('#ffffff');
+    controle.getRange('A4:C5').setFontWeight('bold');
+    controle.setFrozenRows(5);
+    controle.autoResizeColumns(1, 3);
+  }
+
+  return controle;
+}
+
+function calcularEleitos(sheet) {
+  const ultimaLinha = sheet.getLastRow();
+  if (ultimaLinha < 4) return [];
+
+  const dados = sheet.getRange(4, 1, ultimaLinha - 3, 5).getValues();
+  const porCargo = {};
+  dados.forEach((linha) => {
+    const [cargo, , nome, , votos] = linha;
+    if (!nome || !String(nome).trim()) return;
+    const chave = String(cargo || 'Geral').trim();
+    if (!porCargo[chave]) porCargo[chave] = [];
+    porCargo[chave].push({ cargo: chave, nome: String(nome).trim(), votos: Number(votos) || 0 });
+  });
+
+  const eleitos = [];
+  Object.entries(porCargo).forEach(([cargo, candidatos]) => {
+    candidatos.sort((a, b) => b.votos - a.votos || a.nome.localeCompare(b.nome, 'pt-BR'));
+    const normalizado = cargo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+    if (normalizado === 'conselho fiscal') {
+      eleitos.push(...candidatos.slice(0, 6));
+      return;
+    }
+
+    const maiorVotacao = candidatos[0]?.votos || 0;
+    if (maiorVotacao > 0) {
+      eleitos.push(...candidatos.filter((candidato) => candidato.votos === maiorVotacao));
+    }
+  });
+
+  return eleitos;
+}
+
+function atualizarControle(ss, estado, eleitos) {
+  const controle = obterAbaControle(ss);
+  const textos = {
+    'ao-vivo': 'Aguardando início',
+    iniciada: 'Apuração Iniciada',
+    concluida: 'Apuração Concluída'
+  };
+
+  controle.getRange('B1:B2').setValues([[textos[estado]], [estado]]);
+  const ultimaLinha = controle.getLastRow();
+  if (ultimaLinha >= 6) controle.getRange(6, 1, ultimaLinha - 5, 3).clearContent();
+  if (eleitos.length) {
+    controle.getRange(6, 1, eleitos.length, 3)
+      .setValues(eleitos.map((eleito) => [eleito.cargo, eleito.nome, eleito.votos]));
+  }
+  controle.autoResizeColumns(1, 3);
+  return controle;
+}
+
+function lerEleitosControle(controle) {
+  const ultimaLinha = controle.getLastRow();
+  if (ultimaLinha < 6) return [];
+  return controle.getRange(6, 1, ultimaLinha - 5, 3).getValues()
+    .filter((linha) => linha[1])
+    .map((linha) => ({ cargo: String(linha[0]), nome: String(linha[1]), votos: Number(linha[2]) || 0 }));
+}
 
 function doGet(e) {
   return lidarComRequisicao(e);
@@ -19,6 +99,7 @@ function lidarComRequisicao(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) sheet = ss.getSheets()[0];
+  const controle = obterAbaControle(ss);
 
   const params = e && e.parameter ? e.parameter : {};
   const acao = params.acao;
@@ -47,21 +128,22 @@ function lidarComRequisicao(e) {
       }
     }
 
-    const statusApuracao = PropertiesService.getScriptProperties()
-      .getProperty(STATUS_APURACAO_KEY) || 'ao-vivo';
+    const statusApuracao = String(controle.getRange('B2').getValue() || 'ao-vivo');
+    const eleitos = lerEleitosControle(controle);
 
-    return responderJson({ status: 'sucesso', candidatos, statusApuracao });
+    return responderJson({ status: 'sucesso', candidatos, statusApuracao, eleitos });
   }
 
-  // O status fica nas propriedades do script, compartilhadas por todos os visitantes.
+  // Status e eleitos ficam visíveis na aba de controle da própria planilha.
   if (acao === 'status') {
     const estado = String(params.estado || '').trim().toLowerCase();
-    if (!['iniciada', 'concluida'].includes(estado)) {
+    if (!['ao-vivo', 'iniciada', 'concluida'].includes(estado)) {
       return responderJson({ status: 'erro', mensagem: 'Estado de apuração inválido.' });
     }
 
-    PropertiesService.getScriptProperties().setProperty(STATUS_APURACAO_KEY, estado);
-    return responderJson({ status: 'sucesso', statusApuracao: estado });
+    const eleitos = estado === 'concluida' ? calcularEleitos(sheet) : [];
+    atualizarControle(ss, estado, eleitos);
+    return responderJson({ status: 'sucesso', statusApuracao: estado, eleitos });
   }
 
   if (acao === 'votar') {
@@ -97,6 +179,7 @@ function lidarComRequisicao(e) {
         const votosZerados = dados.map((linha) => [linha[0] ? 0 : linha[2]]);
         sheet.getRange(4, 5, votosZerados.length, 1).setValues(votosZerados);
       }
+      atualizarControle(ss, 'ao-vivo', []);
       return responderJson({ status: 'sucesso', mensagem: 'Urna zerada com sucesso.' });
     } finally {
       lock.releaseLock();

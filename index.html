@@ -38,6 +38,11 @@
     const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
     let statusApuracao = 'ao-vivo';
     let carregandoDados = false;
+    let eleitosApuracao = null;
+
+    function normalizarNome(valor) {
+      return String(valor ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    }
 
     function atualizarIndicadorApuracao() {
       const textos = {
@@ -76,6 +81,9 @@
         
         if (data.status === "sucesso" && Array.isArray(data.candidatos)) {
           statusApuracao = ['iniciada', 'concluida'].includes(data.statusApuracao) ? data.statusApuracao : 'ao-vivo';
+          eleitosApuracao = Array.isArray(data.eleitos)
+            ? new Set(data.eleitos.map((eleito) => normalizarNome(eleito.nome)))
+            : null;
           atualizarIndicadorApuracao();
           renderizarDashboard(data.candidatos);
         } else {
@@ -157,9 +165,11 @@
 
           const nome = String(c.nome ?? 'Candidato');
           const eleito = statusApuracao === 'concluida'
-            && (cargoLower === 'conselho fiscal'
-              ? index < 6
-              : maiorVotacao > 0 && Number(c.votos) === maiorVotacao);
+            && (eleitosApuracao
+              ? eleitosApuracao.has(normalizarNome(nome))
+              : (cargoLower === 'conselho fiscal'
+                ? index < 6
+                : maiorVotacao > 0 && Number(c.votos) === maiorVotacao));
           let fotoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(nome)}&background=0D8ABC&color=fff&size=128`;
           if (c.foto && c.foto.trim() !== "") {
             // Caminhos relativos funcionam em hospedagens na raiz ou em subdiretórios.
