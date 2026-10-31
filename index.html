@@ -46,14 +46,14 @@
 
     function atualizarIndicadorApuracao() {
       const textos = {
-        'ao-vivo': '',
+        'ao-vivo': 'Aguardando início',
         iniciada: 'Apuração Iniciada',
         concluida: 'Apuração Concluída'
       };
       const badge = document.getElementById('status-apuracao-badge');
       const dot = document.getElementById('status-apuracao-dot');
       document.getElementById('status-apuracao-text').textContent = textos[statusApuracao] || textos['ao-vivo'];
-      badge.classList.toggle('hidden', statusApuracao === 'ao-vivo');
+      badge.classList.remove('hidden');
       badge.classList.toggle('bg-yellow-300', statusApuracao === 'concluida');
       badge.classList.toggle('text-slate-900', statusApuracao === 'concluida');
       badge.classList.toggle('bg-blue-800', statusApuracao === 'ao-vivo');
