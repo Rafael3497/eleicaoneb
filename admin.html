@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin - Lançamento de Votos</title>
+  <title>Admin - Painel Diretoria Geral</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-200 min-h-screen font-sans">
 
   <header class="bg-slate-900 text-white p-4 shadow-md sticky top-0 z-10">
     <div class="max-w-4xl mx-auto flex justify-between items-center">
-      <h1 class="text-xl font-bold uppercase">Painel Mesário (Geral)</h1>
+      <h1 class="text-xl font-bold uppercase">Painel Diretoria Geral</h1>
       <div class="flex gap-2 items-center">
         <button data-status-apuracao onclick="definirStatusApuracao('iniciada')" class="text-xs bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white px-3 py-2 rounded-lg font-bold transition">Iniciar apuração</button>
         <button data-status-apuracao onclick="definirStatusApuracao('concluida')" class="text-xs bg-yellow-500 hover:bg-yellow-600 disabled:opacity-60 text-slate-900 px-3 py-2 rounded-lg font-bold transition">Finalizar apuração</button>
@@ -23,6 +23,11 @@
 
   <main class="max-w-4xl mx-auto p-6 mt-4">
     <p id="status-apuracao-feedback" role="status" aria-live="polite" class="mb-4 rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">Verificando status da apuração...</p>
+    
+    <div class="mb-4">
+      <h2 class="text-lg font-bold text-slate-800">Diretoria e Conselho Fiscal para o triênio 2027/2030</h2>
+    </div>
+
     <div class="bg-white rounded-xl shadow-lg overflow-hidden">
       <table class="w-full text-left border-collapse">
         <thead>
@@ -44,6 +49,21 @@
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbyYsaZCrDxKSm-hPgraeH22HCkqkgeldyiXslB7FEgU7jNwbARzxlarqFXxHIgJ_V90aA/exec";
     let atualizandoStatusApuracao = false;
+
+    // Definição estrita da Diretoria (Filtro Local)
+    const DIRETORIA_2027_2030 = [
+      { cargo: 'Presidente', nome: 'M. César Melo' },
+      { cargo: 'Presidente', nome: 'M. Pedro Rogério' },
+      { cargo: 'Vice presidente', nome: 'M. José Marques' },
+      { cargo: '1º secretário', nome: 'José Honório Filho' },
+      { cargo: '1º secretário', nome: 'Lucas Lourenço' },
+      { cargo: '2º secretário', nome: 'Camila Aguiar' },
+      { cargo: '2º secretário', nome: 'Cecília Honório' },
+      { cargo: '1º tesoureiro', nome: 'C. Pedro Cela' },
+      { cargo: '2º tesoureiro', nome: 'Rafael Ye' },
+      { cargo: '2º tesoureiro', nome: 'Thiago Parente' },
+      { cargo: 'Orador oficial', nome: 'Kairllany Rodrigues' }
+    ];
 
     function mostrarStatusApuracao(mensagem, tipo = 'info') {
       const feedback = document.getElementById('status-apuracao-feedback');
@@ -99,6 +119,7 @@
         const response = await fetch(`${API_URL}?acao=ler`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
+        
         if (data.status === "sucesso" && Array.isArray(data.candidatos)) {
           const estados = {
             'ao-vivo': 'Aguardando início',
@@ -113,13 +134,24 @@
           const tbody = document.getElementById('tabela-admin');
           tbody.innerHTML = '';
 
-          const filtrados = candidatosOficiais(data.candidatos);
+          // Filtra mesclando a lista rígida da diretoria com os dados vindos da API
+          const filtrados = DIRETORIA_2027_2030.map(membro => {
+            const candidatoApi = data.candidatos.find(c => c.nome.trim().toLowerCase() === membro.nome.trim().toLowerCase());
+            return {
+              cargo: membro.cargo,
+              nome: membro.nome,
+              id: candidatoApi ? candidatoApi.id : null,
+              votos: candidatoApi ? candidatoApi.votos : 0,
+              cadastradoNaUrna: !!candidatoApi
+            };
+          });
 
           filtrados.forEach((c, index) => {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-slate-50';
             const cadastrado = c.cadastradoNaUrna;
             const chaveLinha = c.id ?? `ausente-${index}`;
+            
             tr.innerHTML = `
               <td class="p-4 font-semibold text-slate-700">${escaparHtml(c.cargo)}</td>
               <td class="p-4 font-bold text-slate-900">${escaparHtml(c.nome)}</td>
@@ -133,7 +165,9 @@
                 </div>
               </td>
             `;
-            if (cadastrado) tr.querySelector('[data-votar]').addEventListener('click', () => votar(c.id));
+            if (cadastrado) {
+              tr.querySelector('[data-votar]').addEventListener('click', () => votar(c.id));
+            }
             tbody.appendChild(tr);
           });
         } else {
