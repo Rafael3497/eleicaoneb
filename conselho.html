@@ -23,7 +23,7 @@
       <table class="w-full text-left border-collapse">
         <thead>
           <tr class="bg-slate-100 text-slate-600 text-sm uppercase tracking-wider border-b">
-            <th class="p-4">Cargo / Posição</th>
+            <th class="p-4">Cargo</th>
             <th class="p-4">Candidato</th>
             <th class="p-4 text-center">Votos no Banco</th>
             <th class="p-4 text-center">Adicionar Votos (Qtd / Ação)</th>
@@ -36,54 +36,52 @@
     </div>
   </main>
 
+  <script src="candidates.js"></script>
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
+
+    function escaparHtml(valor) {
+      return String(valor ?? '').replace(/[&<>"']/g, caractere => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[caractere]);
+    }
 
     async function carregarConselho() {
       try {
         const response = await fetch(`${API_URL}?acao=ler`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         
-        if (data.status === "sucesso") {
+        if (data.status === "sucesso" && Array.isArray(data.candidatos)) {
           const tbody = document.getElementById('tabela-conselho');
           tbody.innerHTML = '';
 
-          let conselheiros = data.candidatos.filter(c => c.cargo === "Conselho Fiscal");
-          conselheiros.sort((a, b) => b.votos - a.votos);
+          let conselheiros = candidatosOficiais(data.candidatos).filter(c => c.cargo === "Conselho fiscal");
+          conselheiros.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
           conselheiros.forEach((c, index) => {
-            let statusBadge = '';
-            
-            if (index === 0 && c.votos > 0) {
-              statusBadge = '<span class="bg-amber-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">Presidente do Conselho</span>';
-            } else if (index === 1 && c.votos > 0) {
-              statusBadge = '<span class="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">1º Membro</span>';
-            } else if (index === 2 && c.votos > 0) {
-              statusBadge = '<span class="bg-blue-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">2º Membro</span>';
-            } else if (index >= 3 && index <= 5 && c.votos > 0) {
-              statusBadge = `<span class="bg-slate-600 text-white text-xs px-2.5 py-1 rounded-full font-bold">${index - 2}º Suplente</span>`;
-            } else {
-              statusBadge = '<span class="text-slate-400 text-xs font-medium">Não eleito / Sem votos</span>';
-            }
+            const cadastrado = c.cadastradoNaUrna;
+            const chaveLinha = c.id ?? `ausente-${index}`;
+            const cargoExibido = cadastrado ? 'Conselho Fiscal' : 'Sem cadastro na urna';
 
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-slate-50 transition-colors';
             tr.innerHTML = `
               <td class="p-4">
-                <div class="font-bold text-slate-800">Ranking #${index + 1}</div>
-                <div class="mt-1">${statusBadge}</div>
+                <div class="font-semibold ${cadastrado ? 'text-slate-700' : 'text-amber-700'}">${cargoExibido}</div>
               </td>
-              <td class="p-4 font-bold text-slate-900">${c.nome} <span class="text-xs text-slate-400 font-normal">(${c.numero || 'N/A'})</span></td>
-              <td class="p-4 text-center"><span class="text-2xl font-black text-amber-700">${c.votos}</span></td>
+              <td class="p-4 font-bold text-slate-900">${escaparHtml(c.nome)}</td>
+              <td class="p-4 text-center"><span class="text-2xl font-black text-amber-700">${escaparHtml(c.votos)}</span></td>
               <td class="p-4 text-center">
                 <div class="flex justify-center items-center gap-2">
-                  <input type="number" id="input-${c.id}" min="1" value="1" class="border border-slate-300 rounded-lg px-3 py-2 w-20 text-center font-bold text-lg">
-                  <button id="btn-${c.id}" onclick="votar(${c.id}, '${c.nome.replace(/'/g, "")}')" class="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-5 rounded-lg shadow transition-all transform active:scale-95 text-sm">
-                    + Inserir
+                  <input type="number" id="input-${escaparHtml(chaveLinha)}" min="1" value="1" ${cadastrado ? '' : 'disabled'} class="border border-slate-300 rounded-lg px-3 py-2 w-20 text-center font-bold text-lg disabled:bg-slate-100">
+                  <button id="btn-${escaparHtml(chaveLinha)}" data-votar ${cadastrado ? '' : 'disabled title="Candidato sem cadastro na urna"'} class="bg-amber-600 hover:bg-amber-700 disabled:bg-slate-400 text-white font-bold py-2 px-5 rounded-lg shadow transition-all transform active:scale-95 text-sm">
+                    ${cadastrado ? '+ Inserir' : 'Sem cadastro'}
                   </button>
                 </div>
               </td>
             `;
+            if (cadastrado) tr.querySelector('[data-votar]').addEventListener('click', () => votar(c.id));
             tbody.appendChild(tr);
           });
         }
@@ -92,12 +90,12 @@
       }
     }
 
-    async function votar(id, nome) {
+    async function votar(id) {
       const inputEl = document.getElementById(`input-${id}`);
       const btnEl = document.getElementById(`btn-${id}`);
-      const qtd = parseInt(inputEl.value) || 1;
+      const qtd = Number(inputEl.value);
 
-      if (qtd <= 0) {
+      if (!Number.isSafeInteger(qtd) || qtd <= 0) {
         alert("Insira uma quantidade válida de votos.");
         return;
       }
@@ -107,7 +105,8 @@
       btnEl.disabled = true;
 
       try {
-        const response = await fetch(`${API_URL}?acao=votar&id=${id}&qtd=${qtd}`);
+        const response = await fetch(`${API_URL}?acao=votar&id=${encodeURIComponent(id)}&qtd=${qtd}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
 
         if (data.status === "sucesso") {

@@ -1,13 +1,12 @@
 {
   "name": "eleicao-neb-realtime",
   "version": "1.0.0",
-  "description": "Sistema de apuração em tempo real com WebSockets",
+  "description": "Painel de apuração com votação via Google Apps Script",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2"
+    "express": "^4.18.2"
   }
 }

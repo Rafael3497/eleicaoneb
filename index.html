@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Apuração Geral - Eleição NEB</title>
+  <title>Apuração Geral - Eleição NEB 2027/2030</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     html {
@@ -15,15 +15,15 @@
   
   <header class="bg-blue-900 text-white p-6 shadow-md sticky top-0 z-10">
     <div class="max-w-6xl mx-auto flex justify-between items-center">
-      <h1 class="text-3xl font-bold uppercase tracking-wide">Eleição NEB - Apuração ao Vivo</h1>
+      <div>
+        <h1 class="text-3xl font-bold uppercase tracking-wide">Eleição NEB - Apuração ao Vivo</h1>
+        <p class="mt-1 text-sm font-medium text-blue-100">Diretoria e Conselho Fiscal para o triênio 2027/2030</p>
+      </div>
       <div class="flex items-center gap-4">
     
-        <span class="flex items-center gap-2 text-sm bg-blue-800 px-3 py-1 rounded-full">
-          <span class="relative flex h-3 w-3">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-          </span>
-          AO VIVO
+        <span id="status-apuracao-badge" class="flex items-center gap-2 text-sm bg-blue-800 px-3 py-1 rounded-full">
+          <span id="status-apuracao-dot" class="inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+          <span id="status-apuracao-text">AO VIVO</span>
         </span>
       </div>
     </div>
@@ -33,24 +33,74 @@
     <div class="text-center text-slate-500 mt-20 text-lg">Carregando painel de apuração...</div>
   </main>
 
+  <script src="candidates.js"></script>
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
+    const CHAVE_STATUS_APURACAO = 'eleicao-neb-status-apuracao';
+    let statusApuracao = localStorage.getItem(CHAVE_STATUS_APURACAO) || 'ao-vivo';
+    let ultimosCandidatos = [];
+
+    function atualizarIndicadorApuracao() {
+      const textos = {
+        'ao-vivo': 'AO VIVO',
+        iniciada: 'Apuração Iniciada',
+        concluida: 'Apuração Concluída'
+      };
+      const badge = document.getElementById('status-apuracao-badge');
+      const dot = document.getElementById('status-apuracao-dot');
+      document.getElementById('status-apuracao-text').textContent = textos[statusApuracao] || textos['ao-vivo'];
+      badge.classList.toggle('bg-yellow-300', statusApuracao === 'concluida');
+      badge.classList.toggle('text-slate-900', statusApuracao === 'concluida');
+      badge.classList.toggle('bg-blue-800', statusApuracao === 'ao-vivo');
+      badge.classList.toggle('bg-emerald-700', statusApuracao === 'iniciada');
+      dot.classList.toggle('bg-yellow-600', statusApuracao === 'concluida');
+      dot.classList.toggle('bg-emerald-500', statusApuracao !== 'concluida');
+    }
+
+    window.addEventListener('storage', (event) => {
+      if (event.key !== CHAVE_STATUS_APURACAO) return;
+      statusApuracao = event.newValue || 'ao-vivo';
+      atualizarIndicadorApuracao();
+      if (ultimosCandidatos.length) renderizarDashboard(ultimosCandidatos);
+    });
+
+    function escaparHtml(valor) {
+      return String(valor ?? '').replace(/[&<>"']/g, caractere => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[caractere]);
+    }
 
     async function carregarDados() {
       try {
         const response = await fetch(`${API_URL}?acao=ler`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         
-        if (data.status === "sucesso") {
+        if (data.status === "sucesso" && Array.isArray(data.candidatos)) {
+          ultimosCandidatos = data.candidatos;
           renderizarDashboard(data.candidatos);
+        } else {
+          mostrarEstado("A API respondeu, mas não trouxe uma lista válida de candidatos.");
         }
       } catch (error) {
         console.error("Erro ao buscar dados:", error);
+        mostrarEstado("Não foi possível carregar a apuração. Verifique a conexão com a API.");
       }
+    }
+
+    function mostrarEstado(mensagem) {
+      const dashboard = document.getElementById('dashboard');
+      dashboard.innerHTML = `<div class="rounded-xl bg-white p-8 text-center text-slate-600 shadow-sm">${escaparHtml(mensagem)}</div>`;
     }
 
     function renderizarDashboard(candidatos) {
       const dashboard = document.getElementById('dashboard');
+      candidatos = candidatosOficiais(candidatos);
+
+      if (!candidatos.length) {
+        mostrarEstado("A API não retornou nomes compatíveis com a lista oficial de candidatos.");
+        return;
+      }
       
       const porCargo = candidatos.reduce((acc, c) => {
         if (!acc[c.cargo]) acc[c.cargo] = [];
@@ -60,15 +110,31 @@
 
       dashboard.innerHTML = '';
 
-      for (const [cargo, lista] of Object.entries(porCargo)) {
-        lista.sort((a, b) => b.votos - a.votos);
+      const ordemCargos = [
+        'Presidente',
+        'Vice presidente',
+        '1º secretário',
+        '2º secretário',
+        '1º tesoureiro',
+        '2º tesoureiro',
+        'Orador oficial',
+        'Conselho fiscal'
+      ];
+      const cargosOrdenados = [
+        ...ordemCargos.filter((cargo) => porCargo[cargo]).map((cargo) => [cargo, porCargo[cargo]]),
+        ...Object.entries(porCargo).filter(([cargo]) => !ordemCargos.includes(cargo))
+      ];
+
+      for (const [cargo, lista] of cargosOrdenados) {
+        lista.sort((a, b) => Number(b.votos) - Number(a.votos) || a.nome.localeCompare(b.nome, 'pt-BR'));
+        const maiorVotacao = Math.max(...lista.map((c) => Number(c.votos) || 0));
 
         const secao = document.createElement('div');
         secao.className = 'mb-10';
         
         let html = `
           <h2 class="text-2xl font-bold text-slate-800 border-b-2 border-blue-900 pb-2 mb-6 uppercase">${cargo}</h2>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div class="grid grid-cols-1 gap-6">
         `;
 
         lista.forEach((c, index) => {
@@ -76,23 +142,22 @@
           let bgCard = 'bg-white shadow-sm';
           const cargoLower = cargo.toLowerCase();
 
-          if (cargoLower.includes('presidente')) {
-            if (index === 0 && c.votos > 0) { statusBadge = '<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">PRESIDENTE</span>'; bgCard = 'bg-blue-50 border-2 border-blue-500 shadow-md'; }
-            else if (index === 1 && c.votos > 0) { statusBadge = '<span class="bg-emerald-600 text-white text-xs px-2 py-1 rounded font-bold">VICE-PRESIDENTE</span>'; bgCard = 'bg-emerald-50 border-2 border-emerald-400 shadow-md'; }
-          } else if (cargoLower.includes('tesoureiro') || cargoLower.includes('secretário')) {
-            if (index === 0 && c.votos > 0) { statusBadge = `<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">1º ${cargo}</span>`; bgCard = 'bg-blue-50 border-2 border-blue-500 shadow-md'; }
-            else if (index === 1 && c.votos > 0) { statusBadge = `<span class="bg-emerald-600 text-white text-xs px-2 py-1 rounded font-bold">2º ${cargo}</span>`; bgCard = 'bg-emerald-50 border-2 border-emerald-400 shadow-md'; }
-          } else if (cargoLower.includes('conselho fiscal')) {
-            if (index === 0 && c.votos > 0) { statusBadge = '<span class="bg-amber-600 text-white text-xs px-2 py-1 rounded font-bold">Presidente Conselho</span>'; bgCard = 'bg-amber-50 border-2 border-amber-500 shadow-md'; }
+          if (cargoLower === 'conselho fiscal') {
+            if (index === 0 && c.votos > 0) { statusBadge = '<span class="bg-amber-600 text-white text-xs px-2 py-1 rounded font-bold">Presidente</span>'; bgCard = 'bg-amber-50 border-2 border-amber-500 shadow-md'; }
             else if (index === 1 && c.votos > 0) { statusBadge = '<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">1º Membro</span>'; bgCard = 'bg-blue-50 border-2 border-blue-400 shadow-md'; }
             else if (index === 2 && c.votos > 0) { statusBadge = '<span class="bg-blue-600 text-white text-xs px-2 py-1 rounded font-bold">2º Membro</span>'; bgCard = 'bg-blue-50 border-2 border-blue-400 shadow-md'; }
-            else if (index >= 3 && index <= 5 && c.votos > 0) { statusBadge = `<span class="bg-slate-600 text-white text-xs px-2 py-1 rounded font-bold">${index - 2}º Suplente</span>`; bgCard = 'bg-slate-50 border border-slate-300 shadow-sm'; }
+            else if (index >= 3 && index <= 6 && c.votos > 0) { statusBadge = `<span class="bg-slate-600 text-white text-xs px-2 py-1 rounded font-bold">${index - 2}º Suplente</span>`; bgCard = 'bg-slate-50 border border-slate-300 shadow-sm'; }
           } else {
             if (index === 0 && c.votos > 0) { bgCard = 'bg-amber-50 border-2 border-amber-400 shadow-md'; }
           }
 
           // Tratamento robusto do caminho da foto (com barra inicial / para garantir leitura no Netlify)
-          let fotoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(c.nome)}&background=0D8ABC&color=fff&size=128`;
+          const nome = String(c.nome ?? 'Candidato');
+          const eleito = statusApuracao === 'concluida'
+            && (cargoLower === 'conselho fiscal'
+              ? index < 6
+              : maiorVotacao > 0 && Number(c.votos) === maiorVotacao);
+          let fotoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(nome)}&background=0D8ABC&color=fff&size=128`;
           if (c.foto && c.foto.trim() !== "") {
             // Se o usuário digitou "assets/thiago.jpeg", transforma em "/assets/thiago.jpeg" para garantir a rota no servidor
             fotoUrl = c.foto.startsWith('http') ? c.foto : (c.foto.startsWith('/') ? c.foto : '/' + c.foto);
@@ -101,16 +166,14 @@
           html += `
             <div class="${bgCard} p-6 rounded-xl flex flex-col items-center text-center justify-between transition-all">
               <div class="w-full flex justify-between items-center mb-3">
-                <span class="text-xs font-bold text-slate-400 uppercase">Ranking #${index + 1}</span>
                 ${statusBadge}
               </div>
-              <img src="${fotoUrl}" alt="${c.nome}" class="w-20 h-20 rounded-full object-cover shadow-md border-2 border-slate-200 mb-3" onerror="this.onerror=null; this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(c.nome)}&background=0D8ABC&color=fff&size=128';">
-              <h3 class="text-xl font-bold text-slate-800">${c.nome}</h3>
-              <p class="text-sm text-slate-500 mb-4">Nº ${c.numero || '-'}</p>
-              
+              <img src="${escaparHtml(fotoUrl)}" alt="${escaparHtml(nome)}" class="w-20 h-20 rounded-full object-cover shadow-md border-2 border-slate-200 mb-3">
+              <h3 class="mb-4 text-xl font-bold text-slate-800">${escaparHtml(nome)}${eleito ? ' <span class="ml-2 rounded-full bg-emerald-600 px-2 py-1 text-xs text-white">Eleito</span>' : ''}</h3>
+
               <div class="w-full flex justify-between items-center mt-2 pt-4 border-t border-slate-100">
                 <span class="text-xs font-semibold text-slate-500 uppercase">Votos</span>
-                <span class="text-3xl font-black text-blue-900">${c.votos}</span>
+                <span class="text-3xl font-black text-blue-900">${escaparHtml(c.votos)}</span>
               </div>
             </div>
           `;
@@ -118,6 +181,12 @@
 
         html += `</div>`;
         secao.innerHTML = html;
+        secao.querySelectorAll('img').forEach((img) => {
+          img.addEventListener('error', () => {
+            img.onerror = null;
+            img.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(img.alt)}&background=0D8ABC&color=fff&size=128`;
+          }, { once: true });
+        });
         dashboard.appendChild(secao);
       }
     }
@@ -146,8 +215,9 @@
       }, 5000);
     }
 
+    atualizarIndicadorApuracao();
     carregarDados();
-    setInterval(carregarDados, 1500);
+    setInterval(carregarDados, 30000);
 
     window.onload = () => {
       setTimeout(iniciarAutoScroll, 2500);
