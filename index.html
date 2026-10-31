@@ -133,7 +133,7 @@
         secao.className = 'mb-10';
         
         let html = `
-          <h2 class="text-2xl font-bold text-slate-800 border-b-2 border-blue-900 pb-2 mb-6 uppercase">${cargo}</h2>
+          <h2 class="text-2xl font-bold text-slate-800 border-b-2 border-blue-900 pb-2 mb-6 uppercase">${escaparHtml(cargo)}</h2>
           <div class="grid grid-cols-1 gap-6">
         `;
 
@@ -151,7 +151,6 @@
             if (index === 0 && c.votos > 0) { bgCard = 'bg-amber-50 border-2 border-amber-400 shadow-md'; }
           }
 
-          // Tratamento robusto do caminho da foto (com barra inicial / para garantir leitura no Netlify)
           const nome = String(c.nome ?? 'Candidato');
           const eleito = statusApuracao === 'concluida'
             && (cargoLower === 'conselho fiscal'
@@ -159,8 +158,8 @@
               : maiorVotacao > 0 && Number(c.votos) === maiorVotacao);
           let fotoUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(nome)}&background=0D8ABC&color=fff&size=128`;
           if (c.foto && c.foto.trim() !== "") {
-            // Se o usuário digitou "assets/thiago.jpeg", transforma em "/assets/thiago.jpeg" para garantir a rota no servidor
-            fotoUrl = c.foto.startsWith('http') ? c.foto : (c.foto.startsWith('/') ? c.foto : '/' + c.foto);
+            // Caminhos relativos funcionam em hospedagens na raiz ou em subdiretórios.
+            fotoUrl = c.foto.startsWith('http') ? c.foto : c.foto.replace(/^\/+/, '');
           }
           
           html += `
