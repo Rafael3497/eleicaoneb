@@ -42,10 +42,17 @@
   <script src="candidates.js"></script>
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
-    const CHAVE_STATUS_APURACAO = 'eleicao-neb-status-apuracao';
-
-    function definirStatusApuracao(status) {
-      localStorage.setItem(CHAVE_STATUS_APURACAO, status);
+    async function definirStatusApuracao(status) {
+      try {
+        const query = new URLSearchParams({ acao: 'status', estado: status, t: Date.now() });
+        const response = await fetch(`${API_URL}?${query}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (data.status !== 'sucesso') throw new Error(data.mensagem || 'A API não confirmou a alteração.');
+      } catch (error) {
+        console.error('Erro ao atualizar o estado da apuração:', error);
+        alert('Não foi possível atualizar o estado para todos. Confira se o Apps Script atualizado foi publicado.');
+      }
     }
 
     function escaparHtml(valor) {

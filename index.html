@@ -30,15 +30,14 @@
   </header>
 
   <main class="max-w-6xl mx-auto p-6 mt-6" id="dashboard">
-    <div class="text-center text-slate-500 mt-20 text-lg">Carregando painel de apuração...</div>
+    <div class="text-center text-slate-500 mt-20 text-lg">Aguarde, carregando a apuração...</div>
   </main>
 
   <script src="candidates.js"></script>
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbxAtnjb2uU3JPRwcVh_YaR5VzXZzFWyQDMr-xRA2ll1I6bRkBVMpUSHAgLNsfFYICZFVw/exec";
-    const CHAVE_STATUS_APURACAO = 'eleicao-neb-status-apuracao';
-    let statusApuracao = localStorage.getItem(CHAVE_STATUS_APURACAO) || 'ao-vivo';
-    let ultimosCandidatos = [];
+    let statusApuracao = 'ao-vivo';
+    let carregandoDados = false;
 
     function atualizarIndicadorApuracao() {
       const textos = {
@@ -58,13 +57,6 @@
       dot.classList.toggle('bg-emerald-500', statusApuracao !== 'concluida');
     }
 
-    window.addEventListener('storage', (event) => {
-      if (event.key !== CHAVE_STATUS_APURACAO) return;
-      statusApuracao = event.newValue || 'ao-vivo';
-      atualizarIndicadorApuracao();
-      if (ultimosCandidatos.length) renderizarDashboard(ultimosCandidatos);
-    });
-
     function escaparHtml(valor) {
       return String(valor ?? '').replace(/[&<>"']/g, caractere => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -72,20 +64,31 @@
     }
 
     async function carregarDados() {
+      if (carregandoDados) return;
+      carregandoDados = true;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       try {
-        const response = await fetch(`${API_URL}?acao=ler`);
+        const response = await fetch(`${API_URL}?acao=ler`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         
         if (data.status === "sucesso" && Array.isArray(data.candidatos)) {
-          ultimosCandidatos = data.candidatos;
+          statusApuracao = ['iniciada', 'concluida'].includes(data.statusApuracao) ? data.statusApuracao : 'ao-vivo';
+          atualizarIndicadorApuracao();
           renderizarDashboard(data.candidatos);
         } else {
           mostrarEstado("A API respondeu, mas não trouxe uma lista válida de candidatos.");
         }
       } catch (error) {
         console.error("Erro ao buscar dados:", error);
-        mostrarEstado("Não foi possível carregar a apuração. Verifique a conexão com a API.");
+        mostrarEstado(error.name === 'AbortError'
+          ? 'Aguarde: a API está demorando para responder. Tentaremos novamente em instantes.'
+          : 'Não foi possível carregar a apuração. Verifique a conexão com a API.');
+      } finally {
+        clearTimeout(timeoutId);
+        carregandoDados = false;
       }
     }
 
@@ -217,7 +220,7 @@
 
     atualizarIndicadorApuracao();
     carregarDados();
-    setInterval(carregarDados, 30000);
+    setInterval(carregarDados, 5000);
 
     window.onload = () => {
       setTimeout(iniciarAutoScroll, 2500);
