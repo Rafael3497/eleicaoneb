@@ -46,12 +46,18 @@
       })[caractere]);
     }
 
+    let carregandoConselho = false;
+
     async function carregarConselho() {
+      if (carregandoConselho) return;
+      carregandoConselho = true;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       try {
-        const response = await fetch(`${API_URL}?acao=ler`);
+        const response = await fetch(`${API_URL}?acao=ler`, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        
         if (data.status === "sucesso" && Array.isArray(data.candidatos)) {
           const tbody = document.getElementById('tabela-conselho');
           tbody.innerHTML = '';
@@ -84,9 +90,19 @@
             if (cadastrado) tr.querySelector('[data-votar]').addEventListener('click', () => votar(c.id));
             tbody.appendChild(tr);
           });
+        } else {
+          throw new Error(data.message || 'A API respondeu sem uma lista válida de candidatos.');
         }
       } catch (e) {
         console.error(e);
+        document.getElementById('tabela-conselho').innerHTML = `
+          <tr><td colspan="4" class="p-6 text-center text-red-700">
+            Não foi possível carregar os candidatos. A tela tentará novamente automaticamente.<br>
+            <span class="text-sm">${escaparHtml(e.name === 'AbortError' ? 'A API demorou mais de 12 segundos para responder.' : e.message)}</span>
+          </td></tr>`;
+      } finally {
+        clearTimeout(timeoutId);
+        carregandoConselho = false;
       }
     }
 
@@ -143,7 +159,7 @@
     }
 
     carregarConselho();
-    setInterval(carregarConselho, 1500); // Atualização automática veloz a cada 1.5 segundos
+    setInterval(carregarConselho, 5000); // Atualiza a cada 5 segundos sem sobrepor consultas pendentes
   </script>
 </body>
 </html>
